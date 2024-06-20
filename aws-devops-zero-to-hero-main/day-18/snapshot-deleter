@@ -1,0 +1,54 @@
+import boto3
+
+ec2_client = boto3.client('ec2')
+ec2_resource = boto3.resource('ec2')
+
+def lambda_handler(event, context):
+    list_instances()
+    list_volumes()
+    list_snapshots()
+    delete_unattached_volume_snapshots()
+    return {
+        'statusCode': 200,
+        'body': 'Completed operations successfully'
+    }
+
+def list_instances():
+    print("Listing all EC2 instances...")
+    instances = ec2_resource.instances.all()
+    for instance in instances:
+        print(f"Instance ID: {instance.id}, State: {instance.state['Name']}")
+
+def list_volumes():
+    print("\nListing all EBS volumes...")
+    volumes = ec2_client.describe_volumes()
+    for volume in volumes['Volumes']:
+        volume_id = volume['VolumeId']
+        state = volume['State']
+        attachments = volume['Attachments']
+        if attachments:
+            instance_id = attachments[0]['InstanceId']
+            print(f"Volume ID: {volume_id}, State: {state}, Attached to Instance: {instance_id}")
+        else:
+            print(f"Volume ID: {volume_id}, State: {state}, Not attached")
+
+def list_snapshots():
+    print("\nListing all snapshots...")
+    snapshots = ec2_client.describe_snapshots(OwnerIds=['self'])
+    for snapshot in snapshots['Snapshots']:
+        print(f"Snapshot ID: {snapshot['SnapshotId']}, Volume ID: {snapshot['VolumeId']}, State: {snapshot['State']}")
+
+def delete_unattached_volume_snapshots():
+    print("\nDeleting snapshots of volumes that are not attached to any instance...")
+    volumes = ec2_client.describe_volumes()
+    unattached_volume_ids = [volume['VolumeId'] for volume in volumes['Volumes'] if not volume['Attachments']]
+    
+    if unattached_volume_ids:
+        snapshots = ec2_client.describe_snapshots(OwnerIds=['self'])
+        for snapshot in snapshots['Snapshots']:
+            if snapshot['VolumeId'] in unattached_volume_ids:
+                snapshot_id = snapshot['SnapshotId']
+                print(f"Deleting snapshot ID: {snapshot_id} of unattached volume ID: {snapshot['VolumeId']}")
+                ec2_client.delete_snapshot(SnapshotId=snapshot_id)
+    else:
+        print("No unattached volumes found.")
